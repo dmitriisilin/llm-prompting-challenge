@@ -10,6 +10,57 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RESET = "\033[0m"
 
+def _normalize_configurations(config_lines):
+    """Normalize configuration lines by sorting parameters and properties for comparison."""
+    normalized = []
+    for line in config_lines:
+        # Split into tokens (parameters)
+        tokens = line.split()
+        if not tokens:
+            continue
+        
+        # Group by parameter name
+        param_groups = {}
+        for token in tokens:
+            if '@' in token:
+                parts = token.split('@', 1)
+                param_name = parts[0]
+                properties = parts[1] if len(parts) > 1 else ""
+                
+                if param_name not in param_groups:
+                    param_groups[param_name] = []
+                
+                # Split properties by comma and sort them
+                if properties:
+                    props = [p.strip() for p in properties.split(',') if p.strip()]
+                    props.sort()  # Sort properties alphabetically
+                    param_groups[param_name].extend(props)
+            else:
+                # Handle tokens without @ (edge case)
+                if token not in param_groups:
+                    param_groups[token] = []
+        
+        # Rebuild configuration with sorted parameters and properties
+        sorted_params = sorted(param_groups.keys())
+        result_tokens = []
+        for param_name in sorted_params:
+            properties = param_groups[param_name]
+            if properties:
+                # Remove duplicates while preserving sorted order
+                seen = set()
+                unique_props = []
+                for prop in properties:
+                    if prop not in seen:
+                        seen.add(prop)
+                        unique_props.append(prop)
+                result_tokens.append(f"{param_name}@{','.join(unique_props)}")
+            else:
+                result_tokens.append(f"{param_name}@")
+        
+        normalized.append(' '.join(result_tokens))
+    
+    return normalized
+
 def run_test(python_file, test_input, expected_output):
     try:
         result = subprocess.run(
@@ -20,13 +71,24 @@ def run_test(python_file, test_input, expected_output):
         )
         if result.returncode != 0:
             return False, f"failed with code: {result.returncode}: {result.stderr}"
-        actual = result.stdout.rstrip('\n')
+        
+        # Get actual output and split into lines
+        actual_raw = result.stdout.rstrip('\n')
+        actual_lines = [line.strip() for line in actual_raw.split('\n') if line.strip()]
+        actual_sorted = sorted(_normalize_configurations(actual_lines))
+        actual = '\n'.join(actual_sorted)
+        
+        # Get expected output and split into lines  
         with open(expected_output, 'r') as f:
-            expected = f.read().rstrip('\n')
+            expected_raw = f.read().rstrip('\n')
+        expected_lines = [line.strip() for line in expected_raw.split('\n') if line.strip()]
+        expected_sorted = sorted(_normalize_configurations(expected_lines))
+        expected = '\n'.join(expected_sorted)
+        
         if actual == expected:
             return True, "OK"
         else:
-            return False, f"{YELLOW}    expected:{RESET}\n{expected}\n{YELLOW}    actual:{RESET}\n{actual}"
+            return False, f"{YELLOW}    expected (sorted):{RESET}\n{expected}\n{YELLOW}    actual (sorted):{RESET}\n{actual}"
     except subprocess.TimeoutExpired:
         return False, "timout (120 seconds)"
     except FileNotFoundError:

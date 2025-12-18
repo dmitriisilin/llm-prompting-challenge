@@ -1,0 +1,10 @@
+[llm@gpt llm@glm]                                           \
+[                                                           \
+    { test@bugbounty                                        \
+        [{test@lvl=easy token@limit=200000}                 \
+         {test@lvl=hard token@limit=500000}]                \
+    }                                                       \
+    { test@review token@per_line=10                         \
+        [ token@rag token@full]                             \
+    }                                                       \
+]

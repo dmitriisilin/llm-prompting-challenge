@@ -1,0 +1,8 @@
+llm@glm test@bugbounty,lvl=easy token@limit=200000
+llm@glm test@bugbounty,lvl=hard token@limit=500000
+llm@glm test@review token@rag,per_line=10
+llm@glm test@review token@full,per_line=10
+llm@gpt test@bugbounty,lvl=easy token@limit=200000
+llm@gpt test@bugbounty,lvl=hard token@limit=500000
+llm@gpt test@review token@rag,per_line=10
+llm@gpt test@review token@full,per_line=10
