@@ -1,398 +1,310 @@
 #!/usr/bin/env python3
 """
-Solution for preprocessing test configurations.
+Solution for preprocessing test combinations.
 
-This script expands compact test configuration representations into flat form.
-It handles bracket notation [...] for Cartesian products and {...} for grouping.
+This script processes configuration files with compact bracket notation
+and expands them into flat configurations.
 """
 
 import sys
 import re
+from pathlib import Path
 from typing import List, Tuple, Set
-import os
+import logging
 
-def debug_print(message: str):
-    """Debug print function that can be easily removed later."""
-    pass
+# Configure logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
-def parse_file(filepath: str) -> List[str]:
-    """Parse input file and return list of configurations."""
-    debug_print(f"Parsing file: {filepath}")
-    
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-    
-    configurations = []
-    current_config_tokens = []
-    
-    for line_num, line in enumerate(lines, 1):
-        original_line = line.rstrip('\n')
-        line_stripped = line.strip()
-        
-        debug_print(f"Line {line_num}: '{original_line}' -> stripped: '{line_stripped}'")
-        
-        # Skip empty lines and comments
-        if not line_stripped or line_stripped.startswith('#'):
-            debug_print(f"Skipping empty/comment line: {line_stripped}")
-            if current_config_tokens:
-                config_str = ' '.join(current_config_tokens)
-                if config_str.strip():  # Only add non-empty configurations
-                    debug_print(f"Adding configuration: {config_str}")
-                    configurations.append(config_str)
-                current_config_tokens = []
-            continue
-        
-        # Process the line content
-        line_content = line_stripped
-        if line_content.endswith('\\'):
-            # Remove the backslash continuation character
-            line_content = line_content[:-1].strip()
-        
-        # Tokenize the line and add to current config
-        if line_content:
-            tokens = line_content.split()
-            current_config_tokens.extend(tokens)
-            debug_print(f"Added tokens: {tokens}, current_config_tokens: {current_config_tokens}")
-        
-        # If line doesn't end with \, this is the end of a configuration
-        if not line_stripped.endswith('\\'):
-            if current_config_tokens:
-                config_str = ' '.join(current_config_tokens)
-                if config_str.strip():  # Only add non-empty configurations
-                    debug_print(f"Complete configuration: {config_str}")
-                    configurations.append(config_str)
-                current_config_tokens = []
-    
-    # Handle last configuration if file doesn't end with newline
-    if current_config_tokens:
-        config_str = ' '.join(current_config_tokens)
-        if config_str.strip():  # Only add non-empty configurations
-            debug_print(f"Adding final configuration: {config_str}")
-            configurations.append(config_str)
-    
-    debug_print(f"Parsed {len(configurations)} configurations")
-    for i, config in enumerate(configurations):
-        debug_print(f"Config {i}: {config}")
-    return configurations
 
-def find_innermost_brackets(text: str) -> Tuple[int, int]:
-    """Find the innermost [ ] brackets in the text."""
-    debug_print(f"Finding innermost brackets in: {text}")
+class ConfigurationProcessor:
+    """Processes configuration strings with bracket notation."""
     
-    max_depth = -1
-    innermost_start = -1
-    innermost_end = -1
-    current_depth = 0
-    stack = []
+    def __init__(self):
+        self.compact_configs = []
+        self.flat_configs = []
     
-    for i, char in enumerate(text):
-        if char == '[':
-            stack.append(i)
-            current_depth += 1
-            debug_print(f"Found '[' at position {i}, depth: {current_depth}")
-        elif char == ']':
-            if stack:
-                start_pos = stack.pop()
-                current_depth -= 1
-                debug_print(f"Found ']' at position {i}, depth: {current_depth}, matching start: {start_pos}")
-                
-                # Check if this is the deepest nested pair
-                if current_depth + 1 > max_depth:
-                    max_depth = current_depth + 1
-                    innermost_start = start_pos
-                    innermost_end = i
-                    debug_print(f"New deepest brackets: [{innermost_start}, {innermost_end}] at depth {max_depth}")
-    
-    if innermost_start != -1 and innermost_end != -1:
-        debug_print(f"Returning innermost brackets: [{innermost_start}, {innermost_end}] at depth {max_depth}")
-        return innermost_start, innermost_end
-    
-    debug_print("No brackets found")
-    return -1, -1
-
-def extract_elements_from_brackets(content: str) -> List[str]:
-    """Extract elements from brackets content, treating {...} as single elements."""
-    debug_print(f"Extracting elements from: {content}")
-    
-    elements = []
-    i = 0
-    n = len(content)
-    
-    while i < n:
-        if content[i].isspace():
-            i += 1
-            continue
+    def parse_file(self, file_path: str) -> List[str]:
+        """Parse input file and return list of configuration strings."""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
         
-        if content[i] == '{':
-            # Find matching closing brace
-            brace_count = 1
-            j = i + 1
-            while j < n and brace_count > 0:
-                if content[j] == '{':
-                    brace_count += 1
-                elif content[j] == '}':
-                    brace_count -= 1
-                j += 1
+        configs = []
+        current_config = []
+        
+        for line in lines:
+            line = line.rstrip()
             
-            if brace_count == 0:
-                element = content[i:j]
-                elements.append(element)
-                debug_print(f"Found brace element: {element}")
-                i = j
+            # Skip empty lines and comments
+            if not line or line.strip().startswith('#'):
+                # If we have a current config, end it
+                if current_config:
+                    config_str = ' '.join(current_config)
+                    if config_str.strip():  # Only add non-empty configs
+                        configs.append(config_str)
+                    current_config = []
+                continue
+            
+            # Remove leading/trailing whitespace
+            line = line.strip()
+            
+            # Check if line ends with continuation
+            if line.endswith('\\'):
+                line = line[:-1].strip()
+                current_config.append(line)
             else:
-                # Unmatched braces, treat as regular character
+                current_config.append(line)
+                # This ends a configuration
+                config_str = ' '.join(current_config)
+                if config_str.strip():  # Only add non-empty configs
+                    configs.append(config_str)
+                current_config = []
+        
+        # Handle any remaining config
+        if current_config:
+            config_str = ' '.join(current_config)
+            if config_str.strip():  # Only add non-empty configs
+                configs.append(config_str)
+        
+        return configs
+    
+    def normalize_whitespace(self, config: str) -> str:
+        """Normalize whitespace in configuration."""
+        return ' '.join(config.split())
+    
+    def find_innermost_brackets(self, config: str) -> Tuple[int, int]:
+        """Find the innermost pair of square brackets."""
+        stack = []
+        innermost_start = -1
+        innermost_end = -1
+        max_depth = -1
+        
+        for i, char in enumerate(config):
+            if char == '[':
+                stack.append(i)
+                if len(stack) > max_depth:
+                    max_depth = len(stack)
+                    innermost_start = i
+            elif char == ']':
+                if stack:
+                    start = stack.pop()
+                    if len(stack) + 1 == max_depth:
+                        innermost_end = i
+                        innermost_start = start
+        
+        if innermost_start != -1 and innermost_end != -1:
+            return innermost_start, innermost_end
+        return -1, -1
+    
+    def extract_bracket_elements(self, content: str) -> List[str]:
+        """Extract elements from bracket content, treating {...} as single tokens."""
+        elements = []
+        i = 0
+        n = len(content)
+        
+        while i < n:
+            if content[i].isspace():
                 i += 1
-        else:
-            # Regular token
-            j = i
-            while j < n and not content[j].isspace() and content[j] != '{':
-                j += 1
+                continue
             
-            element = content[i:j]
-            elements.append(element)
-            debug_print(f"Found regular element: {element}")
-            i = j
-    
-    debug_print(f"Extracted elements: {elements}")
-    return elements
-
-def expand_brackets(configuration: str) -> List[str]:
-    """Expand the innermost brackets in a configuration."""
-    debug_print(f"Expanding brackets in: {configuration}")
-    
-    start, end = find_innermost_brackets(configuration)
-    
-    if start == -1:
-        debug_print("No brackets to expand")
-        return [configuration]
-    
-    # Extract content inside brackets
-    bracket_content = configuration[start + 1:end]
-    debug_print(f"Bracket content: '{bracket_content}'")
-    
-    # Extract elements from brackets
-    elements = extract_elements_from_brackets(bracket_content)
-    
-    if not elements:
-        debug_print("No elements found in brackets")
-        return [configuration]
-    
-    debug_print(f"Elements to expand: {elements}")
-    
-    # Create new configurations by replacing brackets with each element
-    # Get the parts before and after the brackets
-    before_bracket = configuration[:start]
-    after_bracket = configuration[end + 1:]
-    
-    debug_print(f"Before bracket: '{before_bracket}', After bracket: '{after_bracket}'")
-    
-    new_configurations = []
-    for element in elements:
-        # Remove braces from element if present
-        if element.startswith('{') and element.endswith('}'):
-            element = element[1:-1].strip()
-        else:
-            element = element.strip()
-        
-        # Combine parts, handling spaces properly
-        # We need to be careful with spacing around the brackets
-        parts = []
-        
-        # Add prefix part, handling trailing spaces
-        if before_bracket:
-            # Remove trailing spaces from prefix
-            prefix_clean = before_bracket.rstrip()
-            if prefix_clean:
-                parts.append(prefix_clean)
-        
-        # Add element
-        if element:
-            parts.append(element)
-        
-        # Add suffix part, handling leading spaces
-        if after_bracket:
-            # Remove leading spaces from suffix
-            suffix_clean = after_bracket.lstrip()
-            if suffix_clean:
-                parts.append(suffix_clean)
-        
-        new_config = ' '.join(parts)
-        new_configurations.append(new_config)
-        debug_print(f"Created new configuration: '{new_config}'")
-    
-    debug_print(f"Expanded into {len(new_configurations)} configurations")
-    return new_configurations
-
-def remove_braces(text: str) -> str:
-    """Remove all {...} braces from text."""
-    debug_print(f"Removing braces from: {text}")
-    
-    result = []
-    i = 0
-    n = len(text)
-    
-    while i < n:
-        if text[i] == '{':
-            # Skip to matching closing brace
-            brace_count = 1
-            j = i + 1
-            while j < n and brace_count > 0:
-                if text[j] == '{':
-                    brace_count += 1
-                elif text[j] == '}':
-                    brace_count -= 1
-                j += 1
-            
-            # Extract content inside braces
-            content = text[i + 1:j - 1]
-            result.append(content)
-            debug_print(f"Found brace content: {content}")
-            i = j
-        else:
-            result.append(text[i])
-            i += 1
-    
-    cleaned = ''.join(result)
-    debug_print(f"Braces removed: {cleaned}")
-    return cleaned
-
-def merge_duplicate_parameters(configuration: str) -> str:
-    """Merge duplicate parameters in a configuration."""
-    debug_print(f"Merging duplicate parameters in: {configuration}")
-    
-    tokens = configuration.split()
-    param_dict = {}
-    
-    for token in tokens:
-        if '@' in token:
-            param_name, properties = token.split('@', 1)
-            if param_name not in param_dict:
-                param_dict[param_name] = []
-            
-            # Split properties by comma and add to list
-            if properties:
-                props = [p.strip() for p in properties.split(',') if p.strip()]
-                param_dict[param_name].extend(props)
-        else:
-            # Handle tokens without @ (edge case)
-            if token not in param_dict:
-                param_dict[token] = []
-    
-    # Rebuild configuration
-    result_tokens = []
-    for param_name, properties in param_dict.items():
-        if properties:
-            # Remove duplicates while preserving order
-            seen = set()
-            unique_props = []
-            for prop in properties:
-                if prop not in seen:
-                    seen.add(prop)
-                    unique_props.append(prop)
-            
-            result_tokens.append(f"{param_name}@{','.join(unique_props)}")
-        else:
-            result_tokens.append(f"{param_name}@")
-    
-    result = ' '.join(result_tokens)
-    debug_print(f"Merged configuration: {result}")
-    return result
-
-def process_configurations(configurations: List[str]) -> List[str]:
-    """Process all configurations until no brackets remain."""
-    debug_print(f"Processing {len(configurations)} configurations")
-    
-    # Process each input configuration separately to preserve inter-configuration duplicates
-    all_final_configs = []
-    
-    for input_config_idx, input_config in enumerate(configurations):
-        debug_print(f"Processing input configuration {input_config_idx}: {input_config}")
-        
-        compact_configs = [input_config]
-        flat_configs = []
-        
-        iteration = 0
-        while compact_configs:
-            iteration += 1
-            debug_print(f"  Iteration {iteration}, compact configs: {len(compact_configs)}")
-            
-            new_compact_configs = []
-            
-            for config in compact_configs:
-                debug_print(f"  Processing config: {config}")
+            if content[i] == '{':
+                # Find matching brace
+                brace_count = 1
+                j = i + 1
+                while j < n and brace_count > 0:
+                    if content[j] == '{':
+                        brace_count += 1
+                    elif content[j] == '}':
+                        brace_count -= 1
+                    j += 1
                 
-                # Try to expand brackets
-                expanded = expand_brackets(config)
-                
-                if len(expanded) == 1 and expanded[0] == config:
-                    # No expansion possible, move to flat
-                    debug_print(f"  No expansion possible, adding to flat: {config}")
-                    flat_configs.append(config)
+                if brace_count == 0:
+                    elements.append(content[i:j])
+                    i = j
                 else:
-                    # Expansion happened, add to new compact
-                    for new_config in expanded:
-                        new_compact_configs.append(new_config)
-                        debug_print(f"  Added to new compact: {new_config}")
-            
-            compact_configs = new_compact_configs
-            debug_print(f"  After iteration {iteration}: {len(compact_configs)} compact, {len(flat_configs)} flat")
-        
-        # Remove braces and merge parameters in flat configurations
-        final_configs_for_input = []
-        for config in flat_configs:
-            debug_print(f"  Final processing of: {config}")
-            
-            # Remove braces
-            config_no_braces = remove_braces(config)
-            
-            # Merge duplicate parameters
-            config_merged = merge_duplicate_parameters(config_no_braces)
-            
-            final_configs_for_input.append(config_merged)
-            debug_print(f"  Final result: {config_merged}")
-        
-        # Remove duplicates that came from the same input configuration only
-        seen_configs = set()
-        unique_configs_for_input = []
-        for config in final_configs_for_input:
-            if config not in seen_configs:
-                seen_configs.add(config)
-                unique_configs_for_input.append(config)
-                debug_print(f"  Kept unique config: {config}")
+                    # Malformed braces, treat as regular character
+                    elements.append(content[i])
+                    i += 1
             else:
-                debug_print(f"  Removed duplicate config from same input: {config}")
+                # Regular token
+                j = i
+                while j < n and not content[j].isspace() and content[j] != '{':
+                    j += 1
+                elements.append(content[i:j])
+                i = j
         
-        all_final_configs.extend(unique_configs_for_input)
-        debug_print(f"  Input {input_config_idx}: {len(final_configs_for_input)} -> {len(unique_configs_for_input)} unique")
+        return [elem.strip() for elem in elements if elem.strip()]
     
-    debug_print(f"Processed {len(configurations)} input configurations, {len(all_final_configs)} total final configs")
-    return all_final_configs
+    def expand_brackets(self, config: str) -> List[str]:
+        """Expand the innermost square brackets in configuration."""
+        start, end = self.find_innermost_brackets(config)
+        
+        if start == -1:
+            # No brackets to expand, remove curly braces if any
+            return [self.remove_curly_braces(config)]
+        
+        # Extract content inside brackets
+        bracket_content = config[start + 1:end]
+        elements = self.extract_bracket_elements(bracket_content)
+        
+        if not elements:
+            return [self.remove_curly_braces(config[:start] + config[end + 1:])]
+        
+        # Generate combinations
+        results = []
+        prefix = config[:start]
+        suffix = config[end + 1:]
+        
+        for element in elements:
+            # Remove curly braces from element
+            clean_element = self.remove_curly_braces(element)
+            new_config = prefix + clean_element + suffix
+            results.append(new_config)
+        
+        return results
+    
+    def remove_curly_braces(self, config: str) -> str:
+        """Remove curly braces from configuration."""
+        result = []
+        i = 0
+        n = len(config)
+        
+        while i < n:
+            if config[i] == '{':
+                # Skip to matching brace
+                brace_count = 1
+                i += 1
+                while i < n and brace_count > 0:
+                    if config[i] == '{':
+                        brace_count += 1
+                    elif config[i] == '}':
+                        brace_count -= 1
+                    if brace_count > 0:
+                        result.append(config[i])
+                    i += 1
+            else:
+                result.append(config[i])
+                i += 1
+        
+        return ''.join(result)
+    
+    def merge_duplicate_parameters(self, config: str) -> str:
+        """Merge duplicate parameters by concatenating their properties."""
+        # Split into tokens
+        tokens = config.split()
+        param_dict = {}
+        
+        for token in tokens:
+            if '@' in token:
+                param_part, prop_part = token.split('@', 1)
+                
+                if param_part not in param_dict:
+                    param_dict[param_part] = []
+                
+                if prop_part:
+                    # Split properties by comma and add to list
+                    props = [p.strip() for p in prop_part.split(',') if p.strip()]
+                    param_dict[param_part].extend(props)
+                else:
+                    # Empty properties are valid
+                    pass
+            else:
+                # Handle edge case of token without @
+                if token not in param_dict:
+                    param_dict[token] = []
+        
+        # Rebuild configuration
+        result_tokens = []
+        for param_name, properties in param_dict.items():
+            if properties:
+                # Remove duplicates while preserving order
+                seen = set()
+                unique_props = []
+                for prop in properties:
+                    if prop not in seen:
+                        seen.add(prop)
+                        unique_props.append(prop)
+                result_tokens.append(f"{param_name}@{','.join(unique_props)}")
+            else:
+                result_tokens.append(f"{param_name}@")
+        
+        return ' '.join(result_tokens)
+    
+    def process_single_config(self, config: str) -> List[str]:
+        """Process a single configuration through all expansions."""
+        normalized = self.normalize_whitespace(config)
+        if not normalized:
+            return []
+        
+        pending = [normalized]
+        completed = []
+        seen = set()  # Only deduplicate within the same input configuration
+        
+        while pending:
+            current = pending.pop(0)
+            
+            # Skip if we've already processed this exact configuration in this branch
+            if current in seen:
+                continue
+            seen.add(current)
+            
+            # Try to expand brackets
+            expanded = self.expand_brackets(current)
+            
+            if len(expanded) == 1 and expanded[0] == current:
+                # No expansion possible, this configuration is complete
+                merged = self.merge_duplicate_parameters(expanded[0])
+                completed.append(merged)
+            else:
+                # Add expanded configurations back to pending
+                for config in expanded:
+                    normalized = self.normalize_whitespace(config)
+                    if normalized:
+                        pending.append(normalized)
+        
+        return completed
+    
+    def process_configurations(self, configs: List[str]) -> List[str]:
+        """Process all configurations through expansion and merging."""
+        all_completed = []
+        
+        for config in configs:
+            completed = self.process_single_config(config)
+            all_completed.extend(completed)
+        
+        return all_completed
+    
+    def sort_configurations(self, configs: List[str]) -> List[str]:
+        """Sort configurations alphabetically."""
+        return sorted(configs)
+    
+    def process_file(self, file_path: str) -> List[str]:
+        """Process the entire file and return sorted configurations."""
+        configs = self.parse_file(file_path)
+        processed = self.process_configurations(configs)
+        sorted_configs = self.sort_configurations(processed)
+        return sorted_configs
+
 
 def main():
-    """Main function."""
+    """Main function to process the input file."""
     if len(sys.argv) != 2:
         print("Usage: python solution.py <input_file>", file=sys.stderr)
         sys.exit(1)
     
-    input_file = sys.argv[1]
-    debug_print(f"Starting processing of file: {input_file}")
+    file_path = sys.argv[1]
     
-    if not os.path.exists(input_file):
-        print(f"Error: File '{input_file}' not found", file=sys.stderr)
+    try:
+        processor = ConfigurationProcessor()
+        results = processor.process_file(file_path)
+        
+        for result in results:
+            print(result)
+    
+    except Exception as e:
+        logger.error(f"Error processing file: {e}")
         sys.exit(1)
-    
-    # Parse configurations from file
-    configurations = parse_file(input_file)
-    
-    # Process configurations
-    processed_configs = process_configurations(configurations)
-    
-    # Sort and output results
-    processed_configs.sort()
-    for config in processed_configs:
-        print(config)
-    
-    debug_print("Processing completed successfully")
+
 
 if __name__ == "__main__":
     main()
