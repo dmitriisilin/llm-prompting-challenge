@@ -180,16 +180,11 @@ def expand_brackets(configuration: str) -> List[str]:
     debug_print(f"Elements to expand: {elements}")
     
     # Create new configurations by replacing brackets with each element
-    # Get the parts before and after the brackets, preserving spacing
+    # Get the parts before and after the brackets
     before_bracket = configuration[:start]
     after_bracket = configuration[end + 1:]
     
-    # Clean up whitespace
-    prefix = before_bracket.rstrip()
-    suffix = after_bracket.lstrip()
-    
     debug_print(f"Before bracket: '{before_bracket}', After bracket: '{after_bracket}'")
-    debug_print(f"Prefix: '{prefix}', Suffix: '{suffix}'")
     
     new_configurations = []
     for element in elements:
@@ -200,13 +195,26 @@ def expand_brackets(configuration: str) -> List[str]:
             element = element.strip()
         
         # Combine parts, handling spaces properly
+        # We need to be careful with spacing around the brackets
         parts = []
-        if prefix:
-            parts.append(prefix)
+        
+        # Add prefix part, handling trailing spaces
+        if before_bracket:
+            # Remove trailing spaces from prefix
+            prefix_clean = before_bracket.rstrip()
+            if prefix_clean:
+                parts.append(prefix_clean)
+        
+        # Add element
         if element:
             parts.append(element)
-        if suffix:
-            parts.append(suffix)
+        
+        # Add suffix part, handling leading spaces
+        if after_bracket:
+            # Remove leading spaces from suffix
+            suffix_clean = after_bracket.lstrip()
+            if suffix_clean:
+                parts.append(suffix_clean)
         
         new_config = ' '.join(parts)
         new_configurations.append(new_config)
